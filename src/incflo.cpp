@@ -172,8 +172,8 @@ void incflo::Evolve()
         //get_volume_of_fluid()->apply_velocity_field(m_cur_time,m_nstep);
         }
         if (writeNow()&& m_vof_advect_tracer){
-            get_volume_of_fluid()->WriteTecPlotFile (m_cur_time,m_nstep);
-            get_volume_of_fluid()->write_tecplot_surface(m_cur_time,m_nstep);
+            get_volume_of_fluid()->WriteTecPlotFile (finest_level,m_cur_time,m_nstep);
+            get_volume_of_fluid()->write_tecplot_surface(finest_level,m_cur_time,m_nstep);
         }
         // Advance to time t + dt
         Advance();
@@ -321,9 +321,9 @@ incflo::writeNow(int a_plot_int, Real a_plot_per_approx, Real a_plot_per_exact)
         // Check to see if we've crossed a a_plot_per_approx interval by comparing
         // the number of intervals that have elapsed for both the current
         // time and the time at the beginning of this timestep.
-
-        int num_per_old = static_cast<int>(std::round((m_cur_time-m_dt) / a_plot_per_approx));
-        int num_per_new = static_cast<int>(std::round((m_cur_time     ) / a_plot_per_approx));
+        // HT: I recplaced round() with trunc()
+        int num_per_old = static_cast<int>(std::trunc((m_cur_time-m_dt) / a_plot_per_approx));
+        int num_per_new = static_cast<int>(std::trunc((m_cur_time     ) / a_plot_per_approx));
 
         // Before using these, however, we must test for the case where we're
         // within machine epsilon of the next interval. In that case, increment

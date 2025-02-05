@@ -30,16 +30,34 @@ void incflo::fillpatch_velocity (int lev, Real time, MultiFab& vel, int ng)
 #else
         Interpolater* mapper = &cell_cons_interp;
 #endif
-        FillPatchTwoLevels(vel, IntVect(ng), time,
-                           {&(m_leveldata[lev-1]->velocity_o),
-                            &(m_leveldata[lev-1]->velocity)},
-                           {m_t_old[lev-1], m_t_new[lev-1]},
-                           {&(m_leveldata[lev]->velocity_o),
-                            &(m_leveldata[lev]->velocity)},
-                           {m_t_old[lev], m_t_new[lev]},
-                           0, 0, AMREX_SPACEDIM, geom[lev-1], geom[lev],
-                           cphysbc, 0, fphysbc, 0,
-                           refRatio(lev-1), mapper, bcrec, 0);
+        if (!m_fillpatchnlevels){
+            FillPatchTwoLevels(vel, IntVect(ng), time,
+                               {&(m_leveldata[lev-1]->velocity_o),
+                                &(m_leveldata[lev-1]->velocity)},
+                               {m_t_old[lev-1], m_t_new[lev-1]},
+                               {&(m_leveldata[lev]->velocity_o),
+                                &(m_leveldata[lev]->velocity)},
+                               {m_t_old[lev], m_t_new[lev]},
+                               0, 0, AMREX_SPACEDIM, geom[lev-1], geom[lev],
+                               cphysbc, 0, fphysbc, 0,
+                               refRatio(lev-1), mapper, bcrec, 0);
+        }else{
+            //for quad-/Oct-tree like grids, it is safter to use FillPatchNLevels
+            Vector<PhysBCFunct<GpuBndryFuncFab<IncfloVelFill>>> physbcs;
+            for (int ilev = 0; ilev <= finest_level; ++ilev) {
+                physbcs.emplace_back(geom[ilev],bcrec,IncfloVelFill{m_probtype, m_bc_velocity});
+            }
+            Vector<Vector<MultiFab*>> smf(finest_level+1);
+            Vector<Vector<Real>> st(finest_level+1);
+            for (int ilev = 0; ilev <= finest_level; ++ilev) {
+              smf[ilev] = {&(m_leveldata[ilev]->velocity_o), &(m_leveldata[ilev]->velocity)};
+              st[ilev] = {m_t_old[ilev], m_t_new[ilev]};
+            }
+            FillPatchNLevels(vel, lev, IntVect(ng), time, smf, st, 0, 0, AMREX_SPACEDIM, geom,
+                             physbcs, 0, ref_ratio, mapper, bcrec, 0);
+        }
+
+
     }
 }
 
@@ -65,16 +83,33 @@ void incflo::fillpatch_density (int lev, Real time, MultiFab& density, int ng)
 #else
         Interpolater* mapper = &cell_cons_interp;
 #endif
-        FillPatchTwoLevels(density, IntVect(ng), time,
-                           {&(m_leveldata[lev-1]->density_o),
-                            &(m_leveldata[lev-1]->density)},
-                           {m_t_old[lev-1], m_t_new[lev-1]},
-                           {&(m_leveldata[lev]->density_o),
-                            &(m_leveldata[lev]->density)},
-                           {m_t_old[lev], m_t_new[lev]},
-                           0, 0, 1, geom[lev-1], geom[lev],
-                           cphysbc, 0, fphysbc, 0,
-                           refRatio(lev-1), mapper, bcrec, 0);
+
+        if (!m_fillpatchnlevels){
+          FillPatchTwoLevels(density, IntVect(ng), time,
+                             {&(m_leveldata[lev-1]->density_o),
+                              &(m_leveldata[lev-1]->density)},
+                             {m_t_old[lev-1], m_t_new[lev-1]},
+                             {&(m_leveldata[lev]->density_o),
+                              &(m_leveldata[lev]->density)},
+                             {m_t_old[lev], m_t_new[lev]},
+                             0, 0, 1, geom[lev-1], geom[lev],
+                             cphysbc, 0, fphysbc, 0,
+                             refRatio(lev-1), mapper, bcrec, 0);
+        }else{
+            //for quad-/Oct-tree like grids, it is safter to use FillPatchNLevels
+            Vector<PhysBCFunct<GpuBndryFuncFab<IncfloDenFill>>> physbcs;
+            for (int ilev = 0; ilev <= finest_level; ++ilev) {
+                physbcs.emplace_back(geom[ilev],bcrec,IncfloDenFill{m_probtype, m_bc_density, m_bc_velocity});
+            }
+            Vector<Vector<MultiFab*>> smf(finest_level+1);
+            Vector<Vector<Real>> st(finest_level+1);
+            for (int ilev = 0; ilev <= finest_level; ++ilev) {
+              smf[ilev] = {&(m_leveldata[ilev]->density_o), &(m_leveldata[ilev]->density)};
+              st[ilev] = {m_t_old[ilev], m_t_new[ilev]};
+            }
+            FillPatchNLevels(density, lev, IntVect(ng), time, smf, st, 0, 0, 1, geom,
+                             physbcs, 0, ref_ratio, mapper, bcrec, 0);
+        }
     }
 }
 
@@ -101,16 +136,34 @@ void incflo::fillpatch_tracer (int lev, Real time, MultiFab& tracer, int ng)
 #else
         Interpolater* mapper = &cell_cons_interp;
 #endif
-        FillPatchTwoLevels(tracer, IntVect(ng), time,
-                           {&(m_leveldata[lev-1]->tracer_o),
-                            &(m_leveldata[lev-1]->tracer)},
-                           {m_t_old[lev-1], m_t_new[lev-1]},
-                           {&(m_leveldata[lev]->tracer_o),
-                            &(m_leveldata[lev]->tracer)},
-                           {m_t_old[lev], m_t_new[lev]},
-                           0, 0, m_ntrac, geom[lev-1], geom[lev],
-                           cphysbc, 0, fphysbc, 0,
-                           refRatio(lev-1), mapper, bcrec, 0);
+        if (!m_fillpatchnlevels){
+          FillPatchTwoLevels(tracer, IntVect(ng), time,
+                             {&(m_leveldata[lev-1]->tracer_o),
+                              &(m_leveldata[lev-1]->tracer)},
+                             {m_t_old[lev-1], m_t_new[lev-1]},
+                             {&(m_leveldata[lev]->tracer_o),
+                              &(m_leveldata[lev]->tracer)},
+                             {m_t_old[lev], m_t_new[lev]},
+                             0, 0, m_ntrac, geom[lev-1], geom[lev],
+                             cphysbc, 0, fphysbc, 0,
+                             refRatio(lev-1), mapper, bcrec, 0);
+        }else{
+            //for quad-/Oct-tree like grids, it is safter to use FillPatchNLevels
+            Vector<PhysBCFunct<GpuBndryFuncFab<IncfloTracFill>>> physbcs;
+            for (int ilev = 0; ilev <= finest_level; ++ilev) {
+                physbcs.emplace_back(geom[ilev],bcrec,IncfloTracFill{m_probtype, m_ntrac, m_bc_tracer_d, m_bc_velocity});
+            }
+            Vector<Vector<MultiFab*>> smf(finest_level+1);
+            Vector<Vector<Real>> st(finest_level+1);
+            for (int ilev = 0; ilev <= finest_level; ++ilev) {
+              smf[ilev] = {&(m_leveldata[ilev]->tracer_o), &(m_leveldata[ilev]->tracer)};
+              st[ilev] = {m_t_old[ilev], m_t_new[ilev]};
+              //smf[ilev].push_back(&(m_leveldata[ilev]->tracer_o));
+              //smf[ilev].push_back(&(m_leveldata[ilev]->tracer));
+            }
+            FillPatchNLevels(tracer, lev, IntVect(ng), time, smf, st, 0, 0, m_ntrac, geom,
+                             physbcs, 0, ref_ratio, mapper, bcrec, 0);
+        }
     }
 }
 
@@ -134,12 +187,30 @@ void incflo::fillpatch_gradp (int lev, Real time, MultiFab& gp, int ng)
 #else
         Interpolater* mapper = &cell_cons_interp;
 #endif
-        FillPatchTwoLevels(gp, IntVect(ng), time,
-                           {&(m_leveldata[lev-1]->gp)}, {time},
-                           {&(m_leveldata[lev]->gp)}, {time},
-                           0, 0, AMREX_SPACEDIM, geom[lev-1], geom[lev],
-                           cphysbc, 0, fphysbc, 0,
-                           refRatio(lev-1), mapper, bcrec, 0);
+
+        if (!m_fillpatchnlevels){
+          FillPatchTwoLevels(gp, IntVect(ng), time,
+                             {&(m_leveldata[lev-1]->gp)}, {time},
+                             {&(m_leveldata[lev]->gp)}, {time},
+                             0, 0, AMREX_SPACEDIM, geom[lev-1], geom[lev],
+                             cphysbc, 0, fphysbc, 0,
+                             refRatio(lev-1), mapper, bcrec, 0);
+        }else{
+            //for quad-/Oct-tree like grids, it is safter to use FillPatchNLevels
+            Vector<PhysBCFunct<GpuBndryFuncFab<IncfloForFill>>> physbcs;
+            for (int ilev = 0; ilev <= finest_level; ++ilev) {
+                physbcs.emplace_back(geom[ilev],bcrec,IncfloForFill{m_probtype});
+            }
+            Vector<Vector<MultiFab*>> smf(finest_level+1);
+            Vector<Vector<Real>> st(finest_level+1);
+            for (int ilev = 0; ilev <= finest_level; ++ilev) {
+              smf[ilev] = {&(m_leveldata[ilev]->gp)};
+              st[ilev] = {time};
+            }
+            FillPatchNLevels(gp, lev, IntVect(ng), time, smf, st, 0, 0, AMREX_SPACEDIM, geom,
+                             physbcs, 0, ref_ratio, mapper, bcrec, 0);
+        }
+
     }
 }
 
@@ -163,12 +234,29 @@ void incflo::fillpatch_force (Real time, Vector<MultiFab*> const& force, int ng)
         PhysBCFunct<GpuBndryFuncFab<IncfloForFill> > fphysbc
             (geom[lev  ], bcrec, IncfloForFill{m_probtype});
         Interpolater* mapper = &pc_interp;
-        FillPatchTwoLevels(*force[lev], IntVect(ng), time,
-                           {force[lev-1]}, {time},
-                           {force[lev  ]}, {time},
-                           0, 0, ncomp, geom[lev-1], geom[lev],
-                           cphysbc, 0, fphysbc, 0,
-                           refRatio(lev-1), mapper, bcrec, 0);
+
+        if (!m_fillpatchnlevels){
+          FillPatchTwoLevels(*force[lev], IntVect(ng), time,
+                             {force[lev-1]}, {time},
+                             {force[lev  ]}, {time},
+                             0, 0, ncomp, geom[lev-1], geom[lev],
+                             cphysbc, 0, fphysbc, 0,
+                             refRatio(lev-1), mapper, bcrec, 0);
+        }else{
+            //for quad-/Oct-tree like grids, it is safter to use FillPatchNLevels
+            Vector<PhysBCFunct<GpuBndryFuncFab<IncfloForFill>>> physbcs;
+            for (int ilev = 0; ilev <= finest_level; ++ilev) {
+                physbcs.emplace_back(geom[ilev],bcrec,IncfloForFill{m_probtype});
+            }
+            Vector<Vector<MultiFab*>> smf(finest_level+1);
+            Vector<Vector<Real>> st(finest_level+1);
+            for (int ilev = 0; ilev <= finest_level; ++ilev) {
+              smf[ilev] = {force[lev-1]};
+              st[ilev] = {time};
+            }
+            FillPatchNLevels(*force[lev], lev, IntVect(ng), time, smf, st, 0, 0, ncomp, geom,
+                             physbcs, 0, ref_ratio, mapper, bcrec, 0);
+        }
     }
 }
 

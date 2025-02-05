@@ -21,9 +21,9 @@ void incflo::prob_init_fluid (int lev)
     ld.density.setVal(m_ro_0);
     ld.density_o.setVal(m_ro_0);
 
-    AMREX_D_TERM(ld.velocity.setVal(m_ic_u, 0, 1);,
-                 ld.velocity.setVal(m_ic_v, 1, 1);,
-                 ld.velocity.setVal(m_ic_w, 2, 1););
+    AMREX_D_TERM(ld.velocity.setVal(m_ic_u, 0, 1, ld.velocity.nGrow());,
+                 ld.velocity.setVal(m_ic_v, 1, 1, ld.velocity.nGrow());,
+                 ld.velocity.setVal(m_ic_w, 2, 1, ld.velocity.nGrow()););
 
     for (int comp = 0; comp < m_ntrac; comp++) {
         ld.tracer.setVal(m_ic_t[comp], comp, 1);
@@ -31,16 +31,17 @@ void incflo::prob_init_fluid (int lev)
 
     if (1109 == m_probtype) {
         get_volume_of_fluid ()->tracer_vof_init_fraction(lev, ld.tracer);
-        MultiFab::Copy(ld.tracer_o, ld.tracer, 0, 0, 1, ld.tracer.nGrow());
-        ld.tracer_o.FillBoundary(geom[lev].periodicity());
         if (m_vof_advect_tracer){
           update_vof_density (lev, ld.density,ld.tracer);
           MultiFab::Copy(ld.density_o, ld.density, 0, 0, 1, ld.density.nGrow());
-          fillpatch_density(lev, m_t_new[lev], ld.density_o, 3);
+//          fillpatch_density(lev, m_t_new[lev], ld.density_o, 1);
           MultiFab::Copy(ld.density_nph, ld.density, 0, 0, 1, ld.density.nGrow());
-          fillpatch_density(lev, m_t_new[lev], ld.density_nph, 3);
+//          fillpatch_density(lev, m_t_new[lev], ld.density_nph, 1);
         }
-
+      /*  if (lev == finest_level){
+            get_volume_of_fluid()->WriteTecPlotFile (lev, m_cur_time,m_nstep);
+            get_volume_of_fluid()->write_tecplot_surface(lev, m_cur_time,m_nstep);
+        }*/
     }
 
     for (MFIter mfi(ld.density); mfi.isValid(); ++mfi)

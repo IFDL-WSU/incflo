@@ -27,7 +27,7 @@ incflo::LevelData::LevelData (amrex::BoxArray const& ba,
       conv_tracer_o   (ba, dm, my_incflo->m_ntrac, 0, MFInfo(), fact)
 {
     if (my_incflo->m_use_cc_proj) {
-        p_cc.define(ba                                  , dm, 1, 1, MFInfo(), fact);
+        p_cc.define(ba                                  , dm, 1, 3, MFInfo(), fact);
     } else {
         p_nd.define(convert(ba,IntVect::TheNodeVector()), dm, 1, 0, MFInfo(), fact);
     }

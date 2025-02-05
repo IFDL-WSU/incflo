@@ -18,8 +18,8 @@ public:
     void tracer_vof_update(int lev, amrex::MultiFab & a_tracer, amrex::Array<amrex::MultiFab, 2> & a_height);
     void curvature_calculation(int lev, amrex::MultiFab & a_tracer, amrex::Array<amrex::MultiFab, 2> & a_height,
                            amrex::MultiFab & a_kappa);
-    void write_tecplot_surface(amrex::Real time, int nstep);
-    void WriteTecPlotFile     (amrex::Real time, int nstep);
+    void write_tecplot_surface(int max_level, amrex::Real time, int nstep);
+    void WriteTecPlotFile     (int max_level, amrex::Real time, int nstep);
     void output_droplet (amrex::Real time, int nstep);
      int domain_tag_droplets (int finest_level, amrex::Vector<amrex::BoxArray > const &grids, amrex::Vector<amrex::Geometry > const& geom,
                               amrex::Vector<amrex::MultiFab*> const& vof,amrex::Vector<amrex::MultiFab*> const& tag);

@@ -574,6 +574,9 @@ private:
     // Use this flag to plot results on leaf cells only.
     // Leaf cells  have no finer sub-grid beneath them.
     bool m_plot_leaf_cells = true;
+    // when testing quad/oct-tree like grids, the ghost cells of coarse levels
+    // may also need to used. FillPatchNLevels needs to be used.
+    bool m_fillpatchnlevels = false;
     // density of the phase represented by VOF=1
     amrex::Vector<amrex::Real> m_ro_s;
     // surface tension

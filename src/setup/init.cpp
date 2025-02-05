@@ -166,11 +166,11 @@ void incflo::ReadParameters ()
            // the default of the surface tension is zero
            m_sigma.resize(m_ntrac, 0.);
            pp.queryarr("sigma", m_sigma, 0, m_ntrac );
+
+           m_update_density_from_vof = true;
+           m_constant_density = false;
         }
-        if(m_vof_advect_tracer){
-            m_update_density_from_vof = true;
-            m_constant_density = false;
-        }
+        pp.query("fillpatchnlevels", m_fillpatchnlevels);
         pp.query("number_of_averaging", m_number_of_averaging);
         pp.query("vof_regrid_layers", m_vof_regrid_layers);
         pp.query("plot_leaf_cells", m_plot_leaf_cells);

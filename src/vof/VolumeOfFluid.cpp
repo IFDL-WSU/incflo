@@ -1777,6 +1777,9 @@ VolumeOfFluid::tracer_vof_update (int lev, MultiFab & vof_mf, Array<MultiFab,2> 
        ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
        {
          auto fvol = vof_arr(i,j,k,0);
+    //if(lev ==1 && i==9 && j==14){
+    //Print()<<"test--------\n";
+    //}
          if (!CELL_IS_FULL(fvol)){
             calculate_height(i, j, k, dim, vof_arr, hb_arr, ht_arr, range);
          }// end if
@@ -1872,7 +1875,7 @@ if(1){
              ht_arr(i,j,k,dim)= VOF_NODATA;
         });
     } // end MFIter
-    //fix me: temporary solution for MPI boundaries
+    //fixme: temporary solution for MPI boundaries
     height[0].FillBoundary(geom.periodicity());
     height[1].FillBoundary(geom.periodicity());
   }//end for dim
@@ -2314,18 +2317,28 @@ VolumeOfFluid::tracer_vof_advection(Vector<MultiFab*> const& tracer,
     // ***********************************************************************
     // Allocate space for the fluxes for vof advection
     // ***********************************************************************
-    Vector<MultiFab> m_total_flux, vof_total_flux;
+    //Vector<MultiFab> m_total_flux, vof_total_flux;
+    Vector< Array<MultiFab,AMREX_SPACEDIM> > m_fluxes(v_incflo->finest_level+1),vof_fluxes(v_incflo->finest_level+1);
     //auto& ld = *v_incflo->m_leveldata[lev];
     for (int lev = 0; lev <= v_incflo->finest_level; ++lev) {
-      m_total_flux.emplace_back(v_incflo->grids[lev], v_incflo->dmap[lev], 1, v_incflo->nghost_state(),
-                                MFInfo(), v_incflo->Factory(lev));
-      vof_total_flux.emplace_back(v_incflo->grids[lev], v_incflo->dmap[lev], 1, v_incflo->nghost_state(),
-                                MFInfo(), v_incflo->Factory(lev));
+     // m_total_flux.emplace_back(v_incflo->grids[lev], v_incflo->dmap[lev], 1, v_incflo->nghost_state(),
+     //                           MFInfo(), v_incflo->Factory(lev));
+     // vof_total_flux.emplace_back(v_incflo->grids[lev], v_incflo->dmap[lev], 1, v_incflo->nghost_state(),
+     //                           MFInfo(), v_incflo->Factory(lev));
+      for (int idim = 0; idim < AMREX_SPACEDIM; ++idim)
+      {
+         BoxArray ba = v_incflo->grids[lev];
+         ba.surroundingNodes(idim);
+         m_fluxes[lev][idim] = MultiFab(ba, v_incflo->dmap[lev], 1, 0);
+         vof_fluxes[lev][idim] = MultiFab(ba, v_incflo->dmap[lev], 1, 0);
+      }
+
     }
+
 
 //The vof advection is to scheme is to use dimension-splitting i.e. advect the vof tracer
 //along each dimension successively using a one-dimensional scheme.
-    for (int lev = v_incflo->finest_level; lev <=  v_incflo->finest_level; ++lev) {
+    for (int lev = v_incflo->finest_level; lev >= 0; --lev) {
       auto& ldvof=*m_leveldata[lev]; /*VOF data for level lev*/
       Geometry const& geom = v_incflo->Geom(lev);
       auto const& dx = geom.CellSizeArray();
@@ -2342,8 +2355,8 @@ VolumeOfFluid::tracer_vof_advection(Vector<MultiFab*> const& tracer,
     // the starting direction of the sweep for i,j,k direction for vof advection is alternated
     // during the solution to minimize the errors associated with the sweep direction.
        int dir = (start+d)%AMREX_SPACEDIM;
-       m_total_flux[lev].setVal(0.0);
-       vof_total_flux[lev].setVal(0.0);
+       //m_total_flux[lev].setVal(0.0);
+       //vof_total_flux[lev].setVal(0.0);
        MultiFab const * U_MF = dir < 1? u_mac[lev]:
 #if AMREX_SPACEDIM == 3
                                dir >= 2? w_mac[lev]:
@@ -2382,10 +2395,13 @@ VolumeOfFluid::tracer_vof_advection(Vector<MultiFab*> const& tracer,
            Array4<Real> const& vof = tracer[lev]->array(mfi);
            Array4<Real const> const& mv = ldvof.normal.const_array(mfi);
            Array4<Real const> const& al = ldvof.alpha.const_array(mfi);
-           Array4<Real> const& m_flux_arr =  m_total_flux[lev].array(mfi);
-           Array4<Real> const& vof_flux_arr =  vof_total_flux[lev].array(mfi);
+           //Array4<Real> const& m_total_flux_arr =  m_total_flux[lev].array(mfi);
+           //Array4<Real> const& vof_total_flux_arr =  vof_total_flux[lev].array(mfi);
            Array4<Real> const& vof_eff_arr = vol_eff.array(mfi);
            Array4<Real const> const& vel_mac_arr =  U_MF->const_array(mfi);
+           Array4<Real> m_flux_arr   = m_fluxes[lev][dir].array(mfi);
+           Array4<Real> vof_flux_arr = vof_fluxes[lev][dir].array(mfi);
+
            // calculate the vof flux by doing the scanning of the cell faces
            // i.e., loop through the node-centered MultiFab.
            ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
@@ -2415,9 +2431,9 @@ VolumeOfFluid::tracer_vof_advection(Vector<MultiFab*> const& tracer,
                                                )};
                Real alpha_v = al(index[0],index[1],index[2]);
              //if (i==47 &&j==0 &&k==0&& dir==1/*v_incflo->m_nstep==1975*/) {
-             // AllPrint() <<" vof_advection---dir "<<dir<<"  "<<m_flux_arr(i,j,k)<<"  "
+             // AllPrint() <<" vof_advection---dir "<<dir<<"  "<<m_total_flux_arr(i,j,k)<<"  "
              //       <<"("<<i<<","<<j<<","<<k<<")"<<"vof"<<"  "<<vof(i,j,k)<<"  "
-             //       <<"vof_flux"<<"  "<<vof_flux_arr(i,j,k)<<" "<<vof(i,j-1,k)<<" "<<un<< "\n";
+             //       <<"vof_flux"<<"  "<<vof_total_flux_arr(i,j,k)<<" "<<vof(i,j-1,k)<<" "<<un<< "\n";
              //}
              //fixme: the ghost cells of the physical boundary have no valid normal vector data
               if(m_v[0]!=VOF_NODATA){
@@ -2441,16 +2457,19 @@ VolumeOfFluid::tracer_vof_advection(Vector<MultiFab*> const& tracer,
              //if (AMREX_D_TERM(index[0]>=ijk_min[0] && index[0]<=ijk_max[0],
              //              && index[1]>=ijk_min[1] && index[1]<=ijk_max[1],
              //              && index[2]>=ijk_min[2] && index[2]<=ijk_max[2])){
-                m_flux_arr(index[0],index[1],index[2]) -=fabs(un);
-                vof_flux_arr(index[0],index[1],index[2]) -=fabs(un)*cf;
+             //   m_total_flux_arr(index[0],index[1],index[2]) -=fabs(un);
+             //   vof_total_flux_arr(index[0],index[1],index[2]) -=fabs(un)*cf;
             // }
              //downstream cells
              //if (AMREX_D_TERM(index_d[0]>=ijk_min[0] && index_d[0]<=ijk_max[0],
              //              && index_d[1]>=ijk_min[1] && index_d[1]<=ijk_max[1],
              //              && index_d[2]>=ijk_min[2] && index_d[2]<=ijk_max[2])){
-               m_flux_arr(index_d[0],index_d[1],index_d[2]) +=fabs(un);
-               vof_flux_arr(index_d[0],index_d[1],index_d[2]) +=fabs(un)*cf;
+             //  m_total_flux_arr(index_d[0],index_d[1],index_d[2]) +=fabs(un);
+             //  vof_total_flux_arr(index_d[0],index_d[1],index_d[2]) +=fabs(un)*cf;
              //}
+               m_flux_arr(i,j,k) = un;
+               vof_flux_arr(i,j,k) = un*cf;
+
             }); //  end ParallelFor
 
             //loop through cell-centered MultiFab to update their value
@@ -2458,16 +2477,34 @@ VolumeOfFluid::tracer_vof_advection(Vector<MultiFab*> const& tracer,
             //ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
            // {
             //  vof(AMREX_D_DECL(i,j,k))*=vof_eff_arr(AMREX_D_DECL(i,j,k));
-            //  vof(AMREX_D_DECL(i,j,k))+=vof_flux_arr(AMREX_D_DECL(i,j,k));
-            //  vof_eff_arr(AMREX_D_DECL(i,j,k))+= m_flux_arr(AMREX_D_DECL(i,j,k));
+            //  vof(AMREX_D_DECL(i,j,k))+=vof_total_flux_arr(AMREX_D_DECL(i,j,k));
+            //  vof_eff_arr(AMREX_D_DECL(i,j,k))+= m_total_flux_arr(AMREX_D_DECL(i,j,k));
             //  Real f = vof(AMREX_D_DECL(i,j,k))/vof_eff_arr(AMREX_D_DECL(i,j,k));
             //  vof(AMREX_D_DECL(i,j,k))= f< 1e-10? 0.:f>1.-1e-10? 1.:f;
            //}); //  end ParallelFor
         }// end MFIter
-        //fix me: temporary solution for MPI boundary
-        m_total_flux[lev].FillBoundary(geom.periodicity());
-        vof_total_flux[lev].FillBoundary(geom.periodicity());
+        //fixme: temporary solution for MPI boundary
+        //m_total_flux[lev].FillBoundary(geom.periodicity());
+        //vof_total_flux[lev].FillBoundary(geom.periodicity());
 
+        iMultiFab mask;
+        if (lev<v_incflo->finest_level){
+          IntVect rr  = v_incflo->geom[lev+1].Domain().size() / v_incflo->geom[lev].Domain().size();
+#ifdef AMREX_USE_EB
+          EB_average_down_faces(GetArrOfConstPtrs(m_fluxes[lev+1]), GetArrOfPtrs(m_fluxes[lev]), rr, v_incflo->geom[lev]);
+          EB_average_down_faces(GetArrOfConstPtrs(vof_fluxes[lev+1]), GetArrOfPtrs(vof_fluxes[lev]), rr, v_incflo->geom[lev]);
+#else
+          average_down_faces(GetArrOfConstPtrs(m_fluxes[lev+1]), GetArrOfPtrs(m_fluxes[lev]), rr, v_incflo->geom[lev]);
+          average_down_faces(GetArrOfConstPtrs(vof_fluxes[lev+1]), GetArrOfPtrs(vof_fluxes[lev]), rr, v_incflo->geom[lev]);
+#endif
+         // Mask is used to identify cells uncovered by finer mesh
+         mask=makeFineMask(*tracer[lev],*tracer[lev+1], IntVect(0),v_incflo->refRatio(lev),
+                            v_incflo->Geom(lev).periodicity(), 1, 0);
+        }
+        else{
+          mask.define(tracer[lev]->boxArray(), tracer[lev]->DistributionMap(), 1, 0);
+          mask.setVal(1);
+        }
 
 #ifdef _OPENMP
 #pragma omp parallel if (Gpu::notInLaunchRegion())
@@ -2478,20 +2515,29 @@ VolumeOfFluid::tracer_vof_advection(Vector<MultiFab*> const& tracer,
             //Box const& bxc = mfi.tilebox(IntVect::TheZeroVector());
            Box const& bx = mfi.tilebox();
            Array4<Real> const& vof = tracer[lev]->array(mfi);
-           Array4<Real> const& m_flux_arr =  m_total_flux[lev].array(mfi);
-           Array4<Real> const& vof_flux_arr =  vof_total_flux[lev].array(mfi);
+           //Array4<Real> const& m_total_flux_arr =  m_total_flux[lev].array(mfi);
+           //Array4<Real> const& vof_total_flux_arr =  vof_total_flux[lev].array(mfi);
+           Array4<int const> const& mask_arr =  mask.const_array(mfi);
            Array4<Real> const& vof_eff_arr = vol_eff.array(mfi);
+           Array4<Real> m_flux_arr   = m_fluxes[lev][dir].array(mfi);
+           Array4<Real> vof_flux_arr = vof_fluxes[lev][dir].array(mfi);
            ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
            {
-              vof(i,j,k)*=vof_eff_arr(i,j,k);
-              vof(i,j,k)+=vof_flux_arr(i,j,k);
-              vof_eff_arr(i,j,k)+= m_flux_arr(i,j,k);
-              Real f = vof(i,j,k)/vof_eff_arr(i,j,k);
-              vof(i,j,k)= f< 1e-10? 0.:f>1.-1e-10? 1.:f;
-              /*if (f > 0. && f < 1.)
-              Print() <<" vof_advection---dir "<<dir<<"  "<<vof_eff_arr(i,j,k)<<"  "
+             if(mask_arr(i,j,k)){
+               vof(i,j,k)*=vof_eff_arr(i,j,k);
+               //vof(i,j,k)+=vof_total_flux_arr(i,j,k);
+               //vof_eff_arr(i,j,k)+= m_total_flux_arr(i,j,k);
+               Array <int, 3> nr={i,j,k};
+               ++nr[dir];
+               vof(i,j,k)+=vof_flux_arr(i,j,k)-vof_flux_arr(nr[0],nr[1],nr[2]);
+               vof_eff_arr(i,j,k)+= m_flux_arr(i,j,k)-m_flux_arr(nr[0],nr[1],nr[2]);
+               Real f = vof(i,j,k)/vof_eff_arr(i,j,k);
+               vof(i,j,k)= f< 1e-10? 0.:f>1.-1e-10? 1.:f;
+               /*if (f > 0. && f < 1.)
+                Print() <<" vof_advection---dir "<<dir<<"  "<<vof_eff_arr(i,j,k)<<"  "
                       <<"("<<i<<","<<j<<","<<k<<")"<<"vof"<<"  "<<f<<"  "
-                      <<"vof_flux"<<"  "<<vof_flux_arr(i,j,k)<< "\n";*/
+                      <<"vof_flux"<<"  "<<vof_total_flux_arr(i,j,k)<< "\n";*/
+             }
            }); //  end ParallelFor
         }// end MFIter
         //fixme: temporary solution for MPI boundary
@@ -2513,6 +2559,7 @@ VolumeOfFluid::tracer_vof_advection(Vector<MultiFab*> const& tracer,
       //fixme: temporary solution for MPI boundary
       tracer[lev]->FillBoundary(v_incflo->Geom(lev).periodicity());
       v_incflo->fillphysbc_tracer(lev, 0., *tracer[lev], 1);
+      //v_incflo->fillpatch_tracer(lev, 0., *tracer[lev], v_incflo->nghost_state());
       auto& ldvof=*m_leveldata[lev]; /*VOF data for level lev*/
       tracer_vof_update (lev, *tracer[lev], ldvof.height);
       curvature_calculation (lev, *tracer[lev], ldvof.height, ldvof.kappa);
@@ -2733,6 +2780,7 @@ VolumeOfFluid::tracer_vof_init_fraction (int lev, MultiFab& a_tracer)
     ParmParse pp("incflo");
     pp.query("vof_init_with_eb", vof_init_with_eb);
     Real distance=0.;
+    auto& ld=*v_incflo->m_leveldata[lev];
     auto& ldvof=*m_leveldata[lev]; /*VOF data for level lev*/
     Geometry const& geom = v_incflo->Geom(lev);
     auto const& dx = geom.CellSizeArray();
@@ -2904,7 +2952,11 @@ VolumeOfFluid::tracer_vof_init_fraction (int lev, MultiFab& a_tracer)
     }
     //fixme: boundary conditions
     a_tracer.FillBoundary(geom.periodicity());
-    v_incflo->fillphysbc_tracer(lev, 0., a_tracer, 1);
+    v_incflo->fillphysbc_tracer(lev, 0., a_tracer, v_incflo->nghost_state());
+
+    MultiFab::Copy(ld.tracer_o, ld.tracer, 0, 0, 1, ld.tracer.nGrow());
+    ld.tracer_o.FillBoundary(geom.periodicity());
+    v_incflo->fillpatch_tracer(lev, 0., a_tracer, v_incflo->nghost_state());
 
     // Once vof tracer is initialized, we calculate the normal direction and alpha of the plane segment
     // as well as the interface curvature
@@ -2936,7 +2988,7 @@ VolumeOfFluid::tracer_vof_init_fraction (int lev, MultiFab& a_tracer)
 ////////
 ///////////////////////////////////////////////////////////////////////////////////////////////
 void
-VolumeOfFluid::write_tecplot_surface(Real time, int nstep)
+VolumeOfFluid::write_tecplot_surface(int max_level, Real time, int nstep)
 {
 
     int myproc = ParallelDescriptor::MyProc();
@@ -2951,7 +3003,7 @@ VolumeOfFluid::write_tecplot_surface(Real time, int nstep)
       auto& TecplotFile = (std::ofstream&) nfi.Stream();
 //    Print()<<"surface_plot"<< nstep<<"  "<< tecplotfilename<<"\n";
 
-        for (int lev = 0; lev <=  v_incflo->finest_level; ++lev) {
+        for (int lev = 0; lev <=  max_level; ++lev) {
             auto& ld = *v_incflo->m_leveldata[lev];
             auto& ldvof=*m_leveldata[lev]; /*VOF data for level lev*/
             Geometry const& geom = v_incflo->Geom(lev);
@@ -3061,7 +3113,7 @@ VolumeOfFluid::write_tecplot_surface(Real time, int nstep)
     } // NFiles
 }
 
-void VolumeOfFluid::WriteTecPlotFile(Real time, int nstep)
+void VolumeOfFluid::WriteTecPlotFile(int max_level, Real time, int nstep)
 {
     BL_PROFILE("incflo::WriteTecPlotFile()");
     std::string m_tecplot_file{"tecplot_"};
@@ -3078,15 +3130,15 @@ void VolumeOfFluid::WriteTecPlotFile(Real time, int nstep)
     if(v_incflo->m_plot_leaf_cells) {
        Vector<MultiFab const*> vptr_pnd,vptr_pcc;
        if(v_incflo->m_use_cc_proj){
-         vptr_pcc.reserve(v_incflo->finest_level+1);
-         for (int lev = 0; lev <= v_incflo->finest_level; ++lev) {
+         vptr_pcc.reserve(max_level+1);
+         for (int lev = 0; lev <= max_level; ++lev) {
            vptr_pcc.push_back(&(v_incflo->m_leveldata[lev]->p_cc));
          }
          vmf_pcc = convexify (vptr_pcc,v_incflo->ref_ratio);
        }
        else{
-         vptr_pnd.reserve(v_incflo->finest_level+1);
-         for (int lev = 0; lev <= v_incflo->finest_level; ++lev) {
+         vptr_pnd.reserve(max_level+1);
+         for (int lev = 0; lev <= max_level; ++lev) {
            vptr_pnd.push_back(&(v_incflo->m_leveldata[lev]->p_nd));
          }
        }
@@ -3140,7 +3192,7 @@ void VolumeOfFluid::WriteTecPlotFile(Real time, int nstep)
 #endif
                       ", \"ftol\""<<"\n";
 
-        for (int lev = 0; lev <=  v_incflo->finest_level; ++lev) {
+        for (int lev = 0; lev <=  max_level; ++lev) {
             bool m_use_cc_proj=v_incflo->m_use_cc_proj;
             auto& ld = *v_incflo->m_leveldata[lev];
             auto& ldvof=*m_leveldata[lev]; /*VOF data for level lev*/
@@ -3153,7 +3205,6 @@ void VolumeOfFluid::WriteTecPlotFile(Real time, int nstep)
             std::string IJK = "IJK";
 
           // Coordinate data
-
             MultiFab * loop_tracer = v_incflo->m_plot_leaf_cells? &vmf_tracer[lev]:&ld.tracer;
 #ifdef _OPENMP
 #pragma omp parallel if (Gpu::notInLaunchRegion())
@@ -3163,7 +3214,7 @@ void VolumeOfFluid::WriteTecPlotFile(Real time, int nstep)
                 Box const& bx = mfi.validbox();
                 //output the data of ghost cells at finest level for checking values of ghost cells
                 //Box bx = mfi.validbox();
-                //*if (lev == v_incflo->finest_level)*/ bx=amrex::grow(bx,1);
+                //if (lev >0) bx=amrex::grow(bx,loop_tracer->nGrow());
                 const auto lo = lbound(bx);
                 const auto hi = ubound(bx);
 
